@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -36,6 +37,10 @@ public class StockChecker {
             return checkRooter(url);
         } else if (url.contains("jiogames.com")) {
             return checkJioGames(url);
+        } else if (url.contains("flipkart.com")) {
+            return checkFlipkart(url);
+        } else if (url.contains("gamestheshop.com")) {
+            return checkGamesTheShop(url);
         } else {
             log.warn("⚠️ Unknown site, using generic checker for: {}", url);
             return checkGeneric(url);
@@ -224,6 +229,152 @@ public class StockChecker {
     }
 
     // ─────────────────────────────────────────────
+    // FLIPKART: Bot-protected, uses real user-agent
+    // and text-based detection (class names change)
+    // ─────────────────────────────────────────────
+    private List<ProductInfo> checkFlipkart(String url) {
+        List<ProductInfo> inStockProducts = new ArrayList<>();
+
+        try (BrowserContext context = browser.newContext(
+                new Browser.NewContextOptions()
+                        .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                        .setViewportSize(1366, 768)
+                        .setLocale("en-IN")
+        )) {
+            Page page = context.newPage();
+            page.setExtraHTTPHeaders(Map.of(
+                    "Accept-Language", "en-IN,en;q=0.9",
+                    "Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+            ));
+
+            page.navigate(url, new Page.NavigateOptions().setTimeout(30000));
+            page.waitForLoadState(LoadState.DOMCONTENTLOADED);
+            page.waitForTimeout(3000);
+
+            log.debug("📄 Flipkart page loaded");
+
+            boolean inStock = false;
+            String indicator = "";
+
+            // Try button selector first
+            try {
+                ElementHandle addBtn = page.querySelector("button._2KpZ6l._2U9uOA._3v1-ww, button[class*='_2KpZ6l']");
+                if (addBtn != null) {
+                    String btnText = addBtn.textContent().trim();
+                    log.debug("🔘 Flipkart button: '{}'", btnText);
+                    if (btnText.equalsIgnoreCase("Add to Cart") || btnText.equalsIgnoreCase("Buy Now")) {
+                        inStock = true;
+                        indicator = "Button found: " + btnText;
+                    }
+                }
+            } catch (PlaywrightException e) {
+                log.debug("Flipkart button selector failed, falling back to text");
+            }
+
+            // Fallback: page text check
+            if (!inStock) {
+                String bodyText = page.textContent("body");
+                boolean hasOutOfStock = bodyText.toLowerCase().contains("out of stock")
+                        || bodyText.toLowerCase().contains("currently unavailable")
+                        || bodyText.toLowerCase().contains("sold out");
+                boolean hasBuyOption = bodyText.contains("Add to Cart")
+                        || bodyText.contains("Buy Now");
+
+                log.debug("Flipkart text — buy: {}, oos: {}", hasBuyOption, hasOutOfStock);
+
+                if (hasBuyOption && !hasOutOfStock) {
+                    inStock = true;
+                    indicator = "Buy option in page text";
+                }
+            }
+
+            if (inStock) {
+                String productName = "PlayStation Gift Card";
+                try {
+                    ElementHandle titleEl = page.querySelector("span.B_NuCI, h1[class*='title'], [class*='_35KyD6']");
+                    if (titleEl != null) productName = titleEl.textContent().trim();
+                } catch (PlaywrightException e) {
+                    log.debug("Could not get Flipkart product name");
+                }
+
+                ProductInfo product = new ProductInfo();
+                product.setName(productName);
+                product.setPrice("₹1000");
+                product.setUrl(url);
+                product.setStockIndicator(indicator);
+                product.setDetectedAt(System.currentTimeMillis());
+                inStockProducts.add(product);
+                log.info("✅ Flipkart IN STOCK: {}", productName);
+            } else {
+                log.info("❌ Flipkart: Out of Stock or unavailable");
+            }
+
+        } catch (Exception e) {
+            log.error("❌ Error checking Flipkart: {}", e.getMessage(), e);
+        }
+
+        return inStockProducts;
+    }
+
+    // ─────────────────────────────────────────────
+    // GAMES THE SHOP: Single product page
+    // Stock shown as "Currently Out of Stock" in red
+    // or "Add to Cart" when available
+    // ─────────────────────────────────────────────
+    private List<ProductInfo> checkGamesTheShop(String url) {
+        List<ProductInfo> inStockProducts = new ArrayList<>();
+
+        try (BrowserContext context = browser.newContext(
+                new Browser.NewContextOptions()
+                        .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        )) {
+            Page page = context.newPage();
+            page.navigate(url, new Page.NavigateOptions().setTimeout(30000));
+            page.waitForLoadState(LoadState.DOMCONTENTLOADED);
+            page.waitForTimeout(3000);
+
+            log.debug("📄 GamesTheShop page loaded");
+
+            String bodyText = page.textContent("body");
+
+            boolean outOfStock = bodyText.toLowerCase().contains("currently out of stock")
+                    || bodyText.toLowerCase().contains("out of stock")
+                    || bodyText.toLowerCase().contains("sold out");
+
+            boolean hasAddToCart = bodyText.toLowerCase().contains("add to cart")
+                    || bodyText.toLowerCase().contains("buy now");
+
+            log.debug("GamesTheShop — outOfStock: {}, addToCart: {}", outOfStock, hasAddToCart);
+
+            if (hasAddToCart && !outOfStock) {
+                String productName = "PlayStation Gift Card";
+                try {
+                    ElementHandle titleEl = page.querySelector("h1");
+                    if (titleEl != null) productName = titleEl.textContent().trim();
+                } catch (PlaywrightException e) {
+                    log.debug("Could not get GamesTheShop product name");
+                }
+
+                ProductInfo product = new ProductInfo();
+                product.setName(productName);
+                product.setPrice("₹1000");
+                product.setUrl(url);
+                product.setStockIndicator("Add to Cart button active");
+                product.setDetectedAt(System.currentTimeMillis());
+                inStockProducts.add(product);
+                log.info("✅ GamesTheShop IN STOCK: {}", productName);
+            } else {
+                log.info("❌ GamesTheShop: Currently Out of Stock");
+            }
+
+        } catch (Exception e) {
+            log.error("❌ Error checking GamesTheShop: {}", e.getMessage(), e);
+        }
+
+        return inStockProducts;
+    }
+
+    // ─────────────────────────────────────────────
     // GENERIC fallback for any other site
     // ─────────────────────────────────────────────
     private List<ProductInfo> checkGeneric(String url) {
@@ -236,7 +387,7 @@ public class StockChecker {
 
             String pageText = page.textContent("body").toLowerCase();
             boolean hasOutOfStock = pageText.contains("out of stock") || pageText.contains("sold out");
-            boolean hasBuyOption  = pageText.contains("add to cart") || pageText.contains("buy now") || pageText.contains("in stock");
+            boolean hasBuyOption = pageText.contains("add to cart") || pageText.contains("buy now") || pageText.contains("in stock");
 
             if (hasBuyOption && !hasOutOfStock) {
                 ProductInfo product = new ProductInfo();
