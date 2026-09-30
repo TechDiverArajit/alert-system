@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: playstation-stock-monitor
+
+server:
+  port: 8080
+
+logging:
+  level:
+    root: INFO
+    com.arajit: DEBUG
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+monitor:
+  interval-seconds: 10
+  telegram:
+    bot-token: 8397115513:AAFhkJ5gLT9gMuGtk6NpbQzfGspYkA5KWJI
+    chat-id: 5385520347
+  sites:
+    - name: "JioGames PlayStation"
+      url: "https://store.jiogames.com/products/?brand=playstation"
+      check-type: "PLAYWRIGHT"
+    - name: "Rooter PlayStation"
+      url: "https://shop.rooter.gg/product/playstation-gift-cards"
+      check-type: "PLAYWRIGHT"

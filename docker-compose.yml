@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  ps-stock-monitor:
+    build: .
+    container_name: playstation-stock-monitor
+    environment:
+      - MONITOR_INTERVAL_SECONDS=10
+      - MONITOR_TELEGRAM_BOT_TOKEN=8397115513:AAFhkJ5gLT9gMuGtk6NpbQzfGspYkA5KWJI
+      - MONITOR_TELEGRAM_CHAT_ID=5385520347
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+      -
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Usage:
+# 1. Replace YOUR_CHAT_ID_HERE with your Telegram chat ID
+# 2. Run: docker-compose up -d
+# 3. View logs: docker-compose logs -f ps-stock-monitor
+# 4. Stop: docker-compose down
